@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>coilcv · Wire Displacement Control in Coil Winding</title>
+  <meta name="description" content="Computer vision system for wire displacement control in the coil winding process: a wire tracker, the thesis gap method, synthetic validation and an interactive setup planner.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<nav class="topbar">
+  <a href="#overview">overview</a>
+  <a href="#setup">setup</a>
+  <a href="#method">method</a>
+  <a href="#validation">validation</a>
+  <a href="#results">results</a>
+  <a href="#planner">setup planner</a>
+  <a href="#recommendations">what to change</a>
+</nav>
+
+<header class="wrap hero" id="overview">
+  <p class="kicker">Master's thesis · computer vision · manufacturing</p>
+  <h1>Computer Vision System for Wire Displacement Control in Coil Winding</h1>
+  <p class="ua">Система комп'ютерного зору для контролю зміщення дроту в процесі намотування котушок</p>
+  <p class="authors">Solomiia Serant · supervisor: Yuryi Homa</p>
+  <p class="affil">Lviv Polytechnic National University · 2026</p>
+  <div class="buttons">
+    <a class="btn soon" href="#">Thesis (PDF)</a>
+    <a class="btn" href="https://github.com/somanuTori/coilcv">Code</a>
+    <a class="btn ghost" href="https://github.com/somanuTori/coilcv/blob/master/results/day01/DATA_GUIDE.md">Data</a>
+    <a class="btn ghost" href="lab/">Setup planner</a>
+  </div>
+
+  <div class="media-card">
+    <video src="assets/video/coilcv_demo.mp4" poster="assets/video/coilcv_demo.gif" autoplay muted loop playsinline></video>
+  </div>
+  <p class="caption"><b>A real recording (4K phone at 15 cm, 2 px per wire).</b> coilcv tracks the point where the wire touches the coil and the brass guide nozzle in every frame. At t = 31 s the wire stops following the guide. That is a displacement defect. It recurs at the same slot position in all three recordings.</p>
+
+  <div class="stats">
+    <div class="stat blue"><div class="num">4 µm</div><div class="lbl">wire position error at only <b>2 px per wire</b> (synthetic ground truth)</div></div>
+    <div class="stat red"><div class="num">≥ 10 px</div><div class="lbl">per wire needed to measure <b>gaps</b>; at 8 px the gap method reports false defects</div></div>
+    <div class="stat copper"><div class="num">3 / 3</div><div class="lbl">recordings show the same defect: <b>layer 2, 0.86 of the slot</b></div></div>
+    <div class="stat green"><div class="num">± 1 %</div><div class="lbl">spindle speed measured from the <b>video alone</b> (300 / 150 rpm)</div></div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<section>
+  <p class="kicker">Abstract</p>
+  <h2>Where is the wire, and where should it be?</h2>
+  <p class="lead">In a coil winding machine the guide nozzle moves along the bobbin while the spindle turns, laying one turn per revolution. When the wire stops following the guide, the turns pile up or leave gaps, and the coil is scrap. This work builds a camera-based system that measures that <b>wire displacement</b> directly.</p>
+  <p>The system has two measurement channels:</p>
+  <ul>
+    <li><b>Wire tracker</b> (front view). It runs on ordinary phone video. It measures the wire position with sub-pixel precision, the lag behind the nozzle, and the layers, and flags displacement events. It also recovers the spindle speed and the winding pitch from the video.</li>
+    <li><b>Gap method</b> (profile view, following Sun et al., 2023). It measures the gap between neighbouring turns, eq. (10)–(47).</li>
+  </ul>
+  <p>A synthetic simulator with known ground truth sets the operating limits of both channels. A setup-assessment tool turns any user's videos into a report on what to change in the camera setup.</p>
+</section>
+
+<section id="setup">
+  <p class="kicker">Physical setup</p>
+  <h2>The machine, the camera, and what is measured where</h2>
+  <figure>
+    <img src="assets/img/fig1_physical_setup_en.png" alt="Front and side view of the winding machine with camera, light and regions of interest" loading="lazy">
+    <figcaption><b>Fig. 1.</b> (a) What the front camera sees: the slot (gives the pixel scale k), the free wire span (green ROI) and the nozzle (red ROI). (b) Side view with the camera, light and background plate, and the profile camera that the gap method needs.</figcaption>
+  </figure>
+  <figure>
+    <img src="assets/img/fig0_architecture_en.png" alt="System architecture: winding machine, camera rig, computer, outputs" loading="lazy">
+    <figcaption><b>Architecture.</b> Hardware groups and the data that flows between them. Dashed boxes are planned.</figcaption>
+  </figure>
+</section>
+
+<section id="method">
+  <p class="kicker">Method</p>
+  <h2>Two channels, eight measurement levels</h2>
+  <div class="channels">
+    <div class="channel a">
+      <h3>A · Wire tracker <span class="tag">front view</span></h3>
+      <ul>
+        <li>remove the static scene with a temporal median</li>
+        <li>find the wire in every image row with sub-pixel precision</li>
+        <li>fit a robust line: wire position and tilt</li>
+        <li>find the nozzle by its brass colour, compute the lag</li>
+        <li>split into layers, flag events, classify them</li>
+      </ul>
+    </div>
+    <div class="channel b">
+      <h3>B · Gap method <span class="tag">profile view</span></h3>
+      <ul>
+        <li>slice-grey equalisation, median filter, Otsu, Canny (10)–(20)</li>
+        <li>top contour of the turns (23)</li>
+        <li>extrema and false endpoints (25)–(32)</li>
+        <li>turn centres from perpendicular bisectors (33)–(43)</li>
+        <li>gap G<sub>i</sub> = k·s<sub>i</sub> − d<sub>D</sub>, defect statistics (44)–(75)</li>
+      </ul>
+    </div>
+  </div>
+  <figure>
+    <img src="assets/img/fig2_program_levels_en.png" alt="Pipeline split by measurement level for both channels" loading="lazy">
+    <figcaption><b>Fig. 2.</b> What is measured at each level (pixel, row, frame, time series, process, system, across videos), in which unit and by which function. All thresholds are set in millimetres and converted with k, so results do not depend on resolution.</figcaption>
+  </figure>
+  <figure>
+    <img src="assets/img/fig3_real_walkthrough_en.png" alt="Each stage of the tracker on a real recording" loading="lazy">
+    <figcaption><b>Fig. 3.</b> The tracker step by step on a real recording: ROI, background removal, row peaks and the wire line, a single row profile, the full trajectory split into layers, the lag against its tolerance, and the spindle speed from the wobble spectrum.</figcaption>
+  </figure>
+</section>
+
+<section id="validation">
+  <p class="kicker">Validation on synthetic data</p>
+  <h2>How many pixels per wire are enough?</h2>
+  <p>The real recordings have no independent ground truth. So the simulator renders winding videos and profile silhouettes in which every wire position and gap is known. It sweeps the pixel scale, blur and glare, and runs the same code on them.</p>
+  <div class="two">
+    <figure>
+      <img src="assets/img/tracker_sweep.png" alt="Tracker error vs pixels per wire" loading="lazy">
+      <figcaption><b>Wire tracker.</b> Position RMSE is 4.3 µm at 2 px/wire and 1.0 µm at 10 px/wire, well below the 14 µm design target. Blur and glare change it by at most 2 µm. The stall is detected in every run.</figcaption>
+    </figure>
+    <figure>
+      <img src="assets/img/profile_sweep.png" alt="Gap method measured vs true gap" loading="lazy">
+      <figcaption><b>Gap method.</b> At 10 px/wire, a 0.02 mm gap is correctly ignored and gaps ≥ 0.04 mm are always flagged, with no false defects. At 4–8 px/wire it reports false defects; at 2 px/wire it cannot resolve the turns.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="results">
+  <p class="kicker">Results on real recordings</p>
+  <h2>Three recordings, one systematic defect</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>recording</th><th>k, mm/px</th><th>px / wire</th><th>frames / rev</th><th>tracked</th><th>rpm video / program</th><th>turns/layer video / program</th><th>defects</th></tr></thead>
+      <tbody>
+        <tr><td>T02 · 300 rpm, nozzle crop</td><td class="num">0.098</td><td class="num">2.0</td><td class="num">12</td><td class="num">100 %</td><td class="num">300 / 300</td><td class="num">53.5 / 55.5</td><td class="num">1</td></tr>
+        <tr><td>T06 · 150 rpm, 75°, daylight</td><td class="num">0.114</td><td class="num">1.8</td><td class="num">24</td><td class="num">100 %</td><td class="num">150 / 150</td><td class="num">52.7 / 55.5</td><td class="num">2</td></tr>
+        <tr><td>T07 · 150 rpm, 75°, lamps</td><td class="num">0.116</td><td class="num">1.7</td><td class="num">24</td><td class="num">100 %</td><td class="num">139 / 150</td><td class="num">47.5 / 55.5</td><td class="num">1</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The same displacement defect appears <b>in all three recordings</b> at the same place: winding layer 2, 0.86 of the slot width, about 1.5 mm from the right flange. The wire stops following the nozzle for 3–4 s while the lag grows to about 1.6–2.0 mm. Different speeds and lighting give the same result, so the cause is in the winding process, not in the camera. The measured turns per layer are 3.6–14 % below the program, so the winding is not fully tight.</p>
+  <div class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-img="assets/img/wire_track_D01_T02_15cm_003.png">T02</button>
+    <button role="tab" aria-selected="false" data-img="assets/img/wire_track_D01_T06_15cm_001.png">T06</button>
+    <button role="tab" aria-selected="false" data-img="assets/img/wire_track_D01_T07_15cm_001.png">T07</button>
+  </div>
+  <figure>
+    <img id="track-img" src="assets/img/wire_track_D01_T02_15cm_003.png" alt="Wire track over the whole recording" loading="lazy">
+    <figcaption>The wire position, the nozzle, the lag and the flagged events over the whole recording. Click any figure to open it full size.</figcaption>
+  </figure>
+</section>
+
+<section id="planner">
+  <p class="kicker">Interactive setup planner</p>
+  <div class="lab-card">
+    <div>
+      <span class="pill">interactive</span>
+      <h2 style="margin-top:10px">The Coil Winder Lab</h2>
+      <p>An interactive, isometric model of the winding machine and camera. Choose the camera, distance, fps and wire diameter, then wind a layer, inject a stall or open a gap. It shows what the camera would see, what coilcv would measure, and whether the setup reaches the targets.</p>
+      <p><a class="btn" href="lab/">Open the Lab →</a></p>
+    </div>
+    <div>
+    <a href="lab/"><img src="assets/img/lab_stall_en.png" alt="Coil Winder Lab: isometric drawing of the winding machine during the stall at 0.86 of the slot" style="border-radius:10px;border:1px solid var(--line);margin-bottom:10px"></a>
+    <ul>
+      <li>live k, px per wire, frames per revolution, minimum detectable gap</li>
+      <li>wind, inject a stall at 0.86 of the slot, open a gap</li>
+      <li>tracker accuracy taken from the real synthetic sweep</li>
+      <li>"what the camera sees" at your pixel scale, next to the 10 px target</li>
+      <li>replay of the real recording T02, pipeline levels linked to the code, a short quiz</li>
+    </ul>
+    </div>
+  </div>
+</section>
+
+<section id="recommendations">
+  <p class="kicker">Practical outcome</p>
+  <h2>What to change in the setup</h2>
+  <ol class="recs">
+    <li><b>Keep the front camera for displacement.</b> 2 px per wire is enough to track the wire and detect stalls. A phone at 15 cm already does this.</li>
+    <li><b>For gaps between turns, magnify ×5.</b> Reach k ≈ 0.02 mm/px (≥ 10 px per wire) with a macro or tele lens. With the same lens that means about 3 cm, which is usually below the minimum focus distance.</li>
+    <li><b>Add a profile view.</b> Point the camera tangent to the layer edge, with a matte background plate behind the coil and light at 90°. Only this view shows the turns' silhouette.</li>
+    <li><b>Keep ≥ 3 frames per revolution.</b> At 60 fps that allows up to 1200 rpm.</li>
+    <li><b>Investigate the process at 0.86 of the slot in layer 2.</b> Start with the layer-start settings (looseEndRots, dwell at the flange).</li>
+  </ol>
+</section>
+
+<section>
+  <p class="kicker">Cite</p>
+  <pre class="bib">@mastersthesis{coilcv2026,
+  title  = {Computer Vision System for Wire Displacement Control in Coil Winding Process},
+  author = {Serant, Solomiia},
+  school = {Lviv Polytechnic National University},
+  year   = {2026},
+  url    = {https://github.com/somanuTori/coilcv}
+}</pre>
+</section>
+
+<footer>
+  Code and data: <a href="https://github.com/somanuTori/coilcv">github.com/somanuTori/coilcv</a>. Figures are generated from the repository by <code>scripts/make_diagrams.py</code>. Visual style inspired by academic project pages and hand-drawn isometric figures.
+</footer>
+</main>
+
+<script>
+  // click any figure to open it full size
+  document.querySelectorAll('figure img').forEach(function (img) {
+    img.style.cursor = 'zoom-in';
+    img.addEventListener('click', function () { window.open(img.src, '_blank'); });
+  });
+  document.querySelectorAll('.tabs button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('.tabs button').forEach(function (x) { x.setAttribute('aria-selected', 'false'); });
+      b.setAttribute('aria-selected', 'true');
+      document.getElementById('track-img').src = b.dataset.img;
+    });
+  });
+</script>
+</body>
+</html>

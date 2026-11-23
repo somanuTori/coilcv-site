@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coil Winder Lab</title>
+<meta name="description" content="Interactive setup planner for coilcv: wind a coil, break it, move the camera, and see whether the setup could measure the wire displacement.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/style.css">
+<link rel="stylesheet" href="lab.css">
+</head>
+<body>
+<nav class="topbar">
+  <a href="../index.html">← project page</a>
+  <a href="#lab">lab</a>
+  <a href="#design">design it</a>
+  <a href="#pipeline">pipeline</a>
+  <a href="#quiz-sec">check yourself</a>
+  <a href="https://github.com/somanuTori/coilcv">code</a>
+</nav>
+
+<header class="lab-head wrap-wide">
+  <p class="kicker">Interactive setup planner</p>
+  <h1>Coil Winder Lab</h1>
+  <p class="sub">Wind a coil, break it, move the camera. The Lab tells you, with coilcv's own formulas (eq. 48–67) and measured limits, whether that setup could see the problem.</p>
+</header>
+
+<main id="lab" class="lab wrap-wide">
+  <aside class="scenarios">
+    <p class="panel-title">Scenarios</p>
+    <ol id="scenarios"></ol>
+    <p class="hint">Drag the machine to turn it.</p>
+  </aside>
+
+  <section class="stage">
+    <div class="fig-tag"><span id="fig-title">Fig. 02 · Day-1 phone setup (real)</span><span class="nts">not to scale</span></div>
+    <svg id="scene" viewBox="0 0 900 560" role="img" aria-label="Isometric drawing of the coil winding machine">
+      <defs>
+        <filter id="wobble" x="-5%" y="-5%" width="110%" height="110%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="4" result="n"/>
+          <feDisplacementMap id="wobble-map" in="SourceGraphic" in2="n" scale="2.5" xChannelSelector="R" yChannelSelector="G"/>
+        </filter>
+      </defs>
+      <g id="machine" filter="url(#wobble)"></g>
+      <g id="labels"></g>
+    </svg>
+    <div class="live" id="live"></div>
+    <p class="replay-note" id="replay-note" hidden>Replaying <b>D01_T02_15cm_003</b>: the wire and guide positions, lag deviation and anomaly flags are coilcv's measurements on the real 4K video (20 fps, from <code>track_simplified</code>). Watch layer 2 between 31 and 33 s: the wire stalls at 0.85 of the slot while the guide moves on (lag deviation down to −1.4 mm).</p>
+    <div class="camsees">
+      <p class="panel-title">Camera sees <span class="muted">(around the wire contact point; each pixel averages k × k mm of a schematic scene)</span></p>
+      <div class="cam-row">
+        <figure><canvas id="cam-a" width="264" height="154"></canvas><figcaption class="cap" id="cam-a-lbl"></figcaption></figure>
+        <figure><canvas id="cam-b" width="264" height="154"></canvas><figcaption class="cap" id="cam-b-lbl"></figcaption></figure>
+      </div>
+    </div>
+    <div class="workshop">
+      <p class="panel-title">Workshop</p>
+      <div class="btns">
+        <button id="b-wind" class="primary">❚❚ Pause</button>
+        <button id="b-restart">↺ Restart</button>
+        <button id="b-stall">Inject stall</button>
+        <button id="b-gap">Open gap</button>
+        <button id="b-view">View: front</button>
+        <button id="b-light">Light: ceiling</button>
+        <button id="b-plate" aria-pressed="false">Background plate</button>
+        <button id="b-see" aria-pressed="false">See-through</button>
+        <button id="b-labels" aria-pressed="true">Labels</button>
+        <button id="b-save">Save figure (PNG)</button>
+      </div>
+    </div>
+    <div class="strip">
+      <p class="panel-title">Wire lag deviation, last 10 s <span class="muted">(what the tracker measures; tolerance ±0.5 mm)</span></p>
+      <svg id="strip" viewBox="0 0 600 110" preserveAspectRatio="none"></svg>
+    </div>
+  </section>
+
+  <aside class="verdicts">
+    <p class="panel-title">Can this setup see it?</p>
+    <table id="stats"></table>
+    <p class="src" id="src"></p>
+  </aside>
+</main>
+
+<section id="design" class="design wrap-wide">
+  <p class="panel-title">Design it</p>
+  <div class="controls">
+    <label>camera <select id="c-cam"></select></label>
+    <label>video mode <select id="c-mode"></select></label>
+    <label>lens <select id="c-lens"></select></label>
+    <label>distance <span id="v-dist" class="val"></span><input id="c-dist" type="range" min="30" max="500" step="1"></label>
+    <label>wire d <span id="v-wire" class="val"></span><input id="c-wire" type="range" min="0.05" max="0.5" step="0.01"></label>
+    <label>spindle <span id="v-rpm" class="val"></span><input id="c-rpm" type="range" min="30" max="1200" step="10"></label>
+    <label>animation speed <span id="v-speed" class="val"></span><input id="c-speed" type="range" min="0.1" max="3" step="0.1"></label>
+    <label>hand-drawn wobble <span id="v-wob" class="val"></span><input id="c-wob" type="range" min="0" max="6" step="0.5"></label>
+  </div>
+  <p class="note" id="cam-note"></p>
+</section>
+
+<section id="pipeline" class="design wrap-wide">
+  <p class="panel-title">Pipeline: what is measured at each level <span class="muted">(rows of Fig. 2; click a block)</span></p>
+  <div class="pipe-grid">
+    <div id="pipe" class="pipe"></div>
+    <div id="pipe-detail" class="pipe-detail"></div>
+  </div>
+</section>
+
+<section id="quiz-sec" class="design wrap-wide">
+  <p class="panel-title">Check yourself</p>
+  <ol id="quiz" class="quiz"></ol>
+</section>
+
+<footer class="wrap-wide">
+  <span id="selftest"></span>
+  Numbers: <code>system_params.py</code> eq. (48)–(67) and the camera model, ported to <code>lab/model.js</code>; tracker and gap-method limits from coilcv's synthetic sweeps.
+  Data from <a id="data-src" href="https://github.com/somanuTori/coilcv">coilcv</a>.
+  The drawing is schematic: real slot and wire pitch, exaggerated layer thickness, compressed camera distance.
+</footer>
+
+<script type="module" src="ui.js"></script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+# Build the site from a coilcv version and publish it on GitHub Pages.
+#   * coilcv-updated: sent by coilcv's "web-data" workflow on a release tag (payload: ref)
+#   * push to this repository, or by hand (choose a coilcv tag or branch; empty = latest v* tag)
+# Needs the secret COILCV_READ_TOKEN while coilcv is private (fine-grained token, repository coilcv,
+# Contents: read-only). Pages: Settings -> Pages -> Source: GitHub Actions.
+name: build-and-deploy
+
+on:
+  repository_dispatch:
+    types: [coilcv-updated]
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+    inputs:
+      coilcv_ref:
+        description: "coilcv tag or branch (empty = latest v* tag)"
+        default: ""
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out coilcv
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/coilcv
+          token: ${{ secrets.COILCV_READ_TOKEN || github.token }}
+          path: coilcv
+          fetch-depth: 0
+
+      - name: Choose the coilcv version
+        working-directory: coilcv
+        env:
+          REF_INPUT: ${{ inputs.coilcv_ref }}
+          REF_EVENT: ${{ github.event.client_payload.ref }}
+        run: |
+          ref="${REF_INPUT:-$REF_EVENT}"
+          if [ -z "$ref" ]; then ref=$(git tag --list 'v*' --sort=-v:refname | head -n 1); fi
+          if [ -z "$ref" ]; then ref=master; fi          # no release tag yet
+          git checkout --quiet "$ref"
+          echo "Building the site from coilcv $ref ($(git rev-parse --short HEAD))" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Export data and figures from coilcv
+        run: |
+          pip install numpy pandas scipy matplotlib opencv-python-headless
+          python coilcv/scripts/export_web_data.py --out data --assets assets
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Parity test (JS formulas = Python)
+        run: node tests/parity.mjs
+
+      - name: Assemble the site
+        run: |
+          mkdir _site
+          cp -r index.html lab assets data .nojekyll _site/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
